@@ -27,3 +27,8 @@ Webbench是一个在linux下使用的非常简单的网站压测工具。它使�
 |       |--trace                |使用 TRACE请求方法                 |
 |-?/-h  |--help                 |打印帮助信息                       |
 |-V     |--version              |显示版本号                         |
+
+
+
+##下一步开发计划，进一步增强POST请求，增加从CSV/JSON文件中读取表单的内容
+##或者直接在命令后面跟进字段名，如： webbench http://localhost:3000 --post --table={"name":"webbench","phone":"13999990000"}

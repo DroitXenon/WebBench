@@ -1,0 +1,10 @@
+*~
+.*.swp
+.*.o
+*.o
+webbench
+webbenchbak
+webbenchbak1
+./gitignore/
+
+webbench

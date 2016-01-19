@@ -31,12 +31,16 @@ int failed=0;
 int bytes=0;
 /* globals */
 int http10=1; /* 0 - http/0.9, 1 - http/1.0, 2 - http/1.1 */
-/* Allow: GET, HEAD, OPTIONS, TRACE */
+/* Allow: GET, HEAD, OPTIONS, TRACE, POST, DELET, PUT, CONNECT */
 #define METHOD_GET 0
 #define METHOD_HEAD 1
 #define METHOD_OPTIONS 2
 #define METHOD_TRACE 3
-#define PROGRAM_VERSION "1.5"
+#define METHOD_POST 4
+#define METHOD_DELET 5
+#define METHOD_PUT 6
+#define METHOD_CONNECT 7
+#define PROGRAM_VERSION "1.5.1"
 int method=METHOD_GET;
 int clients=1;
 int force=0;
@@ -63,6 +67,10 @@ static const struct option long_options[]=
  {"head",no_argument,&method,METHOD_HEAD},
  {"options",no_argument,&method,METHOD_OPTIONS},
  {"trace",no_argument,&method,METHOD_TRACE},
+ {"post",no_argument,&method,METHOD_POST},
+ {"delet",no_argument,&method,METHOD_DELET},
+ {"put",no_argument,&method,METHOD_PUT},
+ {"connect",no_argument,&method,METHOD_CONNECT},
  {"version",no_argument,NULL,'V'},
  {"proxy",required_argument,NULL,'p'},
  {"clients",required_argument,NULL,'c'},
@@ -72,7 +80,7 @@ static const struct option long_options[]=
 /* prototypes */
 static void benchcore(const char* host,const int port, const char *request);
 static int bench(void);
-static void build_request(const char *url);
+static void build_request(const char *url, const char *param);//the *param is using for post/delet request's req.body.tableName 
 
 static void alarm_handler(int signal)
 {
@@ -95,6 +103,10 @@ static void usage(void)
 	"  --head                   Use HEAD request method.\n"
 	"  --options                Use OPTIONS request method.\n"
 	"  --trace                  Use TRACE request method.\n"
+	"  --post                   Use TRACE request method.\n"
+	"  --delet                  Use TRACE request method.\n"
+	"  --put                    Use TRACE request method.\n"
+	"  --connect                Use TRACE request method.\n"
 	"  -?|-h|--help             This information.\n"
 	"  -V|--version             Display program version.\n"
 	);
@@ -162,7 +174,7 @@ int main(int argc, char *argv[])
  fprintf(stderr,"Webbench - Simple Web Benchmark "PROGRAM_VERSION"\n"
 	 "Copyright (c) Radim Kolar 1997-2004, GPL Open Source Software.\n"
 	 );
- build_request(argv[optind]);
+ build_request(argv[optind],NULL);
  /* print bench info */
  printf("\nBenchmarking: ");
  switch(method)
@@ -176,6 +188,14 @@ int main(int argc, char *argv[])
 		 printf("HEAD");break;
 	 case METHOD_TRACE:
 		 printf("TRACE");break;
+     case METHOD_POST:
+		 printf("POST");break;
+     case METHOD_DELET:
+		 printf("DELET");break;
+     case METHOD_PUT:
+		 printf("PUT");break;
+     case METHOD_CONNECT:
+		 printf("CONNECT");break;
  }
  printf(" %s",argv[optind]);
  switch(http10)
@@ -196,7 +216,7 @@ int main(int argc, char *argv[])
  return bench();
 }
 
-void build_request(const char *url)
+void build_request(const char *url, const char *param)
 {
   char tmp[10];
   int i;
@@ -208,6 +228,10 @@ void build_request(const char *url)
   if(method==METHOD_HEAD && http10<1) http10=1;
   if(method==METHOD_OPTIONS && http10<2) http10=2;
   if(method==METHOD_TRACE && http10<2) http10=2;
+  if(method==METHOD_POST && http10<2) http10=2;
+  if(method==METHOD_DELET && http10<2) http10=2;
+  if(method==METHOD_PUT && http10<2) http10=2;
+  if(method==METHOD_CONNECT && http10<2) http10=2;
 
   switch(method)
   {
@@ -216,6 +240,10 @@ void build_request(const char *url)
 	  case METHOD_HEAD: strcpy(request,"HEAD");break;
 	  case METHOD_OPTIONS: strcpy(request,"OPTIONS");break;
 	  case METHOD_TRACE: strcpy(request,"TRACE");break;
+	  case METHOD_POST: strcpy(request,"POST");break;
+	  case METHOD_DELET: strcpy(request,"DELET");break;
+	  case METHOD_PUT: strcpy(request,"PUT");break;
+	  case METHOD_CONNECT: strcpy(request,"CONNECT");break;
   }
 		  
   strcat(request," ");
@@ -278,6 +306,12 @@ void build_request(const char *url)
 	  strcat(request,"Host: ");
 	  strcat(request,host);
 	  strcat(request,"\r\n");
+  }
+  if(param != NULL) 
+  {
+      strcat(request, "body: {");
+      strcat(request, param);
+      strcat(request, "},\r\n_body:true,\r\n");
   }
   if(force_reload && proxyhost!=NULL)
   {
