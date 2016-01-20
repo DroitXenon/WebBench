@@ -23,6 +23,9 @@
 #include <strings.h>
 #include <time.h>
 #include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+//#include "parson.h"
 
 /* values */
 volatile int timerexpired=0;
@@ -74,13 +77,14 @@ static const struct option long_options[]=
  {"version",no_argument,NULL,'V'},
  {"proxy",required_argument,NULL,'p'},
  {"clients",required_argument,NULL,'c'},
+ {"data",required_argument,NULL,'d'},/*read POST data*/
  {NULL,0,NULL,0}
 };
 
 /* prototypes */
 static void benchcore(const char* host,const int port, const char *request);
 static int bench(void);
-static void build_request(const char *url, const char *param);//the *param is using for post/delet request's req.body.tableName 
+static void build_request(const char *url, const char *requestBody, int UA); /*the *param is using for post/delet request's req.body.tableName */
 
 static void alarm_handler(int signal)
 {
@@ -93,12 +97,19 @@ static void usage(void)
 	"webbench [option]... URL\n"
 	"  -f|--force               Don't wait for reply from server.\n"
 	"  -r|--reload              Send reload request - Pragma: no-cache.\n"
+    "  -d|--data                Read POST body from csv or json file.\n"
 	"  -t|--time <sec>          Run benchmark for <sec> seconds. Default 30.\n"
 	"  -p|--proxy <server:port> Use proxy server for request.\n"
 	"  -c|--clients <n>         Run <n> HTTP clients at once. Default one.\n"
 	"  -9|--http09              Use HTTP/0.9 style requests.\n"
 	"  -1|--http10              Use HTTP/1.0 protocol.\n"
 	"  -2|--http11              Use HTTP/1.1 protocol.\n"
+    "  -u|--User-Agent          Change User-Agent.\n"
+           "  1 for WeCaht iPhone\t 2 for WeChat Android\t 3 for iPhone Safari\n"
+           "  4 for Android Chrome\t 5 for Windows IE11\t 6 for Windows IE10\n"
+           "  7 for Windows Edge\t 8 for Windows Chrome\t 9 for Windows FireFox\n"
+           "  10 for Mac Safari\t 11 for Mac Chrome\t 12 for Mac FireFox\n"
+           "  Empty for WebBench Program Version.\n"
 	"  --get                    Use GET request method.\n"
 	"  --head                   Use HEAD request method.\n"
 	"  --options                Use OPTIONS request method.\n"
@@ -110,12 +121,14 @@ static void usage(void)
 	"  -?|-h|--help             This information.\n"
 	"  -V|--version             Display program version.\n"
 	);
-};
+}
 int main(int argc, char *argv[])
 {
  int opt=0;
  int options_index=0;
  char *tmp=NULL;
+ char *requestBody=NULL;
+ int UA=0;
 
  if(argc==1)
  {
@@ -123,7 +136,7 @@ int main(int argc, char *argv[])
           return 2;
  } 
 
- while((opt=getopt_long(argc,argv,"912Vfrt:p:c:?h",long_options,&options_index))!=EOF )
+ while((opt=getopt_long(argc,argv,"912Vfrt:p:c:d:u:?h",long_options,&options_index))!=EOF )
  {
   switch(opt)
   {
@@ -159,6 +172,34 @@ int main(int argc, char *argv[])
    case 'h':
    case '?': usage();return 2;break;
    case 'c': clients=atoi(optarg);break;
+   case 'd': 
+          printf("%s",optarg);
+          FILE *fp = fopen(optarg, "r");
+          if(!fp) {
+              perror("File opening failed");
+              return EXIT_FAILURE;
+          }
+ 
+          int c; // note: int, not char, required to handle EOF
+          while ((c = fgetc(fp)) != EOF) { // standard C I/O file reading loop
+               //putchar(c);
+             //printf("%d ",c);
+              
+              //strcat(requestBody, (char)c);
+                 // printf("%s",requestBody);
+          }
+ 
+          if (ferror(fp))
+            puts("I/O error when reading");
+          else if (feof(fp))
+            puts("End of file reached successfully");
+ 
+          fclose(fp);
+          //above is designed for read csv or json file and parser it into POST body
+          break;
+      case 'u':
+          UA=atoi(optarg);
+          break;
   }
  }
  
@@ -174,7 +215,7 @@ int main(int argc, char *argv[])
  fprintf(stderr,"Webbench - Simple Web Benchmark "PROGRAM_VERSION"\n"
 	 "Copyright (c) Radim Kolar 1997-2004, GPL Open Source Software.\n"
 	 );
- build_request(argv[optind],NULL);
+ 
  /* print bench info */
  printf("\nBenchmarking: ");
  switch(method)
@@ -197,6 +238,7 @@ int main(int argc, char *argv[])
      case METHOD_CONNECT:
 		 printf("CONNECT");break;
  }
+ build_request(argv[optind],requestBody,UA);
  printf(" %s",argv[optind]);
  switch(http10)
  {
@@ -216,7 +258,7 @@ int main(int argc, char *argv[])
  return bench();
 }
 
-void build_request(const char *url, const char *param)
+void build_request(const char *url, const char *requestBody, int UA)
 {
   char tmp[10];
   int i;
@@ -300,17 +342,63 @@ void build_request(const char *url, const char *param)
 	  strcat(request," HTTP/1.1");
   strcat(request,"\r\n");
   if(http10>0)
-	  strcat(request,"User-Agent: WebBench "PROGRAM_VERSION"\r\n");
+	  switch(UA){
+          case 0:
+              strcat(request,"User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 9_2 like Mac OS X) AppleWebKit/601.1.46 (KHTML, like Gecko) Mobile/13C75 MicroMessager/6.3.9");//ForWeCahtIniPhone
+              break;
+          case 1:
+              strcat(request,"User-Agent: Mozilla/5.0 (Linux; Android 4.4.2; HUAWEI G750-T20 Build/HuaweiG750-T20) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/30.0.0.0 Mobile MicroMessager/6.3.9 NetType/WIFI Language/zh_CN");//ForWeCahtInAndroid
+              break;
+          case 2:
+              strcat(request,"User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 9_2 like Mac OS X) AppleWebKit/601.1.46 (KHTML, like Gecko) Mobile/13C75");
+              break;
+          case 3:
+              strcat(request,"User-Agent: Mozilla/5.0 (Linux; Android 4.4.2; HUAWEI G750-T20 Build/HuaweiG750-T20) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/30.0.0.0 Mobile Safari/537.36");
+              break;
+          case 4:
+              strcat(request,"User-Agent: Mozilla/5.0 (Linux; Android 4.4.2; HUAWEI G750-T20 Build/HuaweiG750-T20) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/30.0.0.0 Mobile Safari/537.36");//forWPNotFoundOne
+              break;
+          case 5:
+              strcat(request,"User-Agent: Mozilla/5.0 (IE 11.0; Windows NT 6.3; Trident/7.0; .NET4.0E; .NET4.0C; rv:11.0) like Gecko");//forDesktopIE11
+              break;
+          case 6:
+              strcat(request,"User-Agent: Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.1; Trident/6.0)");//forDesktopIE10
+              break;
+          case 7:
+              strcat(request,"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2486.0 Safari/537.36 Edge/13.10586");//forDesktopEged
+              break;
+          case 8:
+              strcat(request,"User-Agent: Mozilla/5.0 (Windows; U; Windows NT 6.3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.111 Safari/537.36");//forPCDesktopChrome
+              break;
+          case 9:
+              strcat(request,"User-Agent: Mozilla/5.0 (Linux; Android 4.4.2; HUAWEI G750-T20 Build/HuaweiG750-T20) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/30.0.0.0 Mobile Safari/537.36");//forPCDesktopFireFox
+              break;
+          case 10:
+              strcat(request,"User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_2) AppleWebKit/601.3.9 (KHTML, like Gecko) Version/9.0.2 Safari/601.3.9");//forMacSafari
+              break;
+          case 11:
+              strcat(request,"User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.111 Safari/537.36");//forMacChrome
+              break;
+          case 12:
+              strcat(request,"User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_2) AppleWebKit/601.3.9 (KHTML, like Gecko) FireFox/43.0.4.5848 Safari/601.3.9");//forMacFireFox
+              break;
+          default:
+              strcat(request,"User-Agent: WebBench "PROGRAM_VERSION"");
+              break;
+      }
+  strcat(request, "\r\n");
+      
+      
   if(proxyhost==NULL && http10>0)
   {
 	  strcat(request,"Host: ");
 	  strcat(request,host);
 	  strcat(request,"\r\n");
   }
-  if(param != NULL) 
+  if(requestBody != NULL) 
   {
       strcat(request, "body: {");
-      strcat(request, param);
+      strcat(request, requestBody);
       strcat(request, "},\r\n_body:true,\r\n");
   }
   if(force_reload && proxyhost!=NULL)
