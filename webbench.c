@@ -25,7 +25,8 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-//#include "parson.h"
+#include "parson.h"
+#include "url.h"
 
 /* values */
 volatile int timerexpired=0;
@@ -54,8 +55,20 @@ int benchtime=30;
 /* internal */
 int mypipe[2];
 char host[MAXHOSTNAMELEN];
-#define REQUEST_SIZE 2048
+#define REQUEST_SIZE 8192
+#define FIELD_SIZE 100
 char request[REQUEST_SIZE];
+char *requestBody=NULL;
+int json_file_total_lines=1;
+int json_file_current_lines=0;
+
+#define ANSI_COLOR_RED     "\x1b[31m"
+#define ANSI_COLOR_GREEN   "\x1b[32m"
+#define ANSI_COLOR_YELLOW  "\x1b[33m"
+#define ANSI_COLOR_BLUE    "\x1b[34m"
+#define ANSI_COLOR_MAGENTA "\x1b[35m"
+#define ANSI_COLOR_CYAN    "\x1b[36m"
+#define ANSI_COLOR_RESET   "\x1b[0m"
 
 static const struct option long_options[]=
 {
@@ -84,7 +97,8 @@ static const struct option long_options[]=
 /* prototypes */
 static void benchcore(const char* host,const int port, const char *request);
 static int bench(void);
-static void build_request(const char *url, const char *requestBody, int UA); /*the *param is using for post/delet request's req.body.tableName */
+static void build_request(const char *url, const char *request_body_param, int UA);
+static char * read_json_file(const char *filename, char field[FIELD_SIZE][FIELD_SIZE]);
 
 static void alarm_handler(int signal)
 {
@@ -98,6 +112,7 @@ static void usage(void)
 	"  -f|--force               Don't wait for reply from server.\n"
 	"  -r|--reload              Send reload request - Pragma: no-cache.\n"
     "  -d|--data                Read POST body from csv or json file.\n"
+    "  -F|--Field               Read the Field added to request body from csv or json file.\n"
 	"  -t|--time <sec>          Run benchmark for <sec> seconds. Default 30.\n"
 	"  -p|--proxy <server:port> Use proxy server for request.\n"
 	"  -c|--clients <n>         Run <n> HTTP clients at once. Default one.\n"
@@ -122,13 +137,21 @@ static void usage(void)
 	"  -V|--version             Display program version.\n"
 	);
 }
+
 int main(int argc, char *argv[])
 {
  int opt=0;
  int options_index=0;
  char *tmp=NULL;
- char *requestBody=NULL;
- int UA=0;
+ int UA=0;//移动requestBody到全局变量，因为考虑到会循环更改。但是UA filename field只会读取／赋值一次，因此仍然放在main函数
+ char *filename=NULL;
+ char *sep = ",";
+ char field[FIELD_SIZE][FIELD_SIZE]={{0}};
+ char *optarg_param=NULL;
+ int tmpbool=0;
+ unsigned long j=0;
+ unsigned long x=0;
+ unsigned long k=0;
 
  if(argc==1)
  {
@@ -136,7 +159,7 @@ int main(int argc, char *argv[])
           return 2;
  } 
 
- while((opt=getopt_long(argc,argv,"912Vfrt:p:c:d:u:?h",long_options,&options_index))!=EOF )
+ while((opt=getopt_long(argc,argv,"912Vfrt:p:c:d:u:F:?h",long_options,&options_index))!=EOF )
  {
   switch(opt)
   {
@@ -172,42 +195,69 @@ int main(int argc, char *argv[])
    case 'h':
    case '?': usage();return 2;break;
    case 'c': clients=atoi(optarg);break;
-   case 'd': 
-          printf("%s",optarg);
-          FILE *fp = fopen(optarg, "r");
-          if(!fp) {
-              perror("File opening failed");
-              return EXIT_FAILURE;
-          }
- 
-          int c; // note: int, not char, required to handle EOF
-          while ((c = fgetc(fp)) != EOF) { // standard C I/O file reading loop
-               //putchar(c);
-             //printf("%d ",c);
-              
-              //strcat(requestBody, (char)c);
-                 // printf("%s",requestBody);
-          }
- 
-          if (ferror(fp))
-            puts("I/O error when reading");
-          else if (feof(fp))
-            puts("End of file reached successfully");
- 
-          fclose(fp);
-          //above is designed for read csv or json file and parser it into POST body
+   case 'F': 
+        tmpbool=1;//mark that param F is called
+         //optarg=strcat(optarg,","); 
+        for(x=strlen(optarg)+1;x>0;x--){
+             optarg[x]=optarg[x-1];
+         }
+        optarg[0]=',';
+         //printf("%s\n",optarg);
+         //Add "," as the first character in optarg
+         x=0;
+        do {
+        
+            tmp = strrchr(optarg, ',');
+            for(j=0;j<strlen(optarg);j++){
+                field[x][j]=tmp[j]; 
+            }  
+            //printf("%s\n ",tmp);
+            optarg[strlen(optarg)-strlen(tmp)]='\0';
+        
+            ++x;
+        } while(optarg && *optarg); 
+        //Slice optarg using "," and store into field[][];
+        for(j=0;j<x;j++){
+            for(k=0;k<strlen(field[j]);k++){
+                field[j][k]=field[j][k+1];
+            }
+        }
+        // for(j=0;j<x;j++){
+        //     for(k=0;k<strlen(field[j]);k++){
+        //         printf("%c",field[j][k]);
+        //     }
+        //     printf("\n");
+        // }
+        //remove all "," in field
+        //在这里应该把所有的参数都切分开来，并且删除掉逗号，存到field二维数组中
+        //“n”,"a","m","e",NULL......
+        //"a","g","e",NULL.....
+        //"s","e","x",NULL.....
           break;
-      case 'u':
+   case 'd': 
+         //getTheFileName and store to a var
+          filename=optarg;
+          break;
+   case 'u':
           UA=atoi(optarg);
           break;
   }
  }
- 
+ //continue with line184 and line 187 we call the function read_json_file to add to requestBody
+ if(filename!=NULL && tmpbool==1) {
+     tmp=read_json_file(filename,field);
+     strcat(request,tmp); 
+ }else if(tmpbool==0){
+     printf(ANSI_COLOR_RED "\r\nField is not specified, WILL NOT READ JSON FILE\r\n\r\nPLEASE USING -F TO SPECIFY FIELD\r\n\r\n" ANSI_COLOR_RESET ANSI_COLOR_RESET);
+ }else if(filename==NULL){
+     printf(ANSI_COLOR_RED "\r\nFile name is not specified, WILL NOT READ JSON FILE\r\n\r\nPLEASE USING -d TO OPEN JSON FILE\r\n\r\n" ANSI_COLOR_RESET ANSI_COLOR_RESET);
+ }
+
  if(optind==argc) {
-                      fprintf(stderr,"webbench: Missing URL!\n");
-		      usage();
-		      return 2;
-                    }
+    fprintf(stderr,"webbench: Missing URL!\n");
+    usage();
+    return 2;
+ }
 
  if(clients==0) clients=1;
  if(benchtime==0) benchtime=60;
@@ -258,7 +308,7 @@ int main(int argc, char *argv[])
  return bench();
 }
 
-void build_request(const char *url, const char *requestBody, int UA)
+void build_request(const char *url, const char *request_body_param, int UA)
 {
   char tmp[10];
   int i;
@@ -317,14 +367,14 @@ void build_request(const char *url, const char *requestBody, int UA)
   {
    /* get port from hostname */
    if(index(url+i,':')!=NULL &&
-      index(url+i,':')<index(url+i,'/'))
+        index(url+i,':')<index(url+i,'/'))
    {
-	   strncpy(host,url+i,strchr(url+i,':')-url-i);
-	   bzero(tmp,10);
-	   strncpy(tmp,index(url+i,':')+1,strchr(url+i,'/')-index(url+i,':')-1);
-	   /* printf("tmp=%s\n",tmp); */
-	   proxyport=atoi(tmp);
-	   if(proxyport==0) proxyport=80;
+	    strncpy(host,url+i,strchr(url+i,':')-url-i);
+	    bzero(tmp,10);
+	    strncpy(tmp,index(url+i,':')+1,strchr(url+i,'/')-index(url+i,':')-1);
+	    /* printf("tmp=%s\n",tmp); */
+	    proxyport=atoi(tmp);
+	    if(proxyport==0) proxyport=80;
    } else
    {
      strncpy(host,url+i,strcspn(url+i,"/"));
@@ -395,11 +445,11 @@ void build_request(const char *url, const char *requestBody, int UA)
 	  strcat(request,host);
 	  strcat(request,"\r\n");
   }
-  if(requestBody != NULL) 
+  if(request_body_param != NULL) 
   {
-      strcat(request, "body: {");
-      strcat(request, requestBody);
-      strcat(request, "},\r\n_body:true,\r\n");
+      strcat(request,"Content-Type:text/json\r\n");
+      strcat(request, request_body_param);//\r\n username=xxx&password=yyy
+      strcat(request, "\r\n");
   }
   if(force_reload && proxyhost!=NULL)
   {
@@ -410,6 +460,58 @@ void build_request(const char *url, const char *requestBody, int UA)
   /* add empty line at end */
   if(http10>0) strcat(request,"\r\n"); 
   // printf("Req=%s\n",request);
+}
+
+/* this function read json file using parson*/
+static char *  read_json_file(const char *filename, char field[FIELD_SIZE][FIELD_SIZE]) 
+{//在这个函数整理所有的读入的json文件，然后储存到tmp中，做到返回一个字符串
+/*先调用url_encode()方法把:后面的每一项的都执行转义
+ *这里是返回值：name:myUserName\r\npassword:myPassword
+ *ps:如果测试中只发送英文的字段其实可以不用转义
+ *
+ */
+ char *tmp=NULL;
+ char *json_content=NULL;
+ JSON_Value *root_value;
+ JSON_Array *values;
+ JSON_Object *value;
+ size_t i;
+ int j;
+
+ 
+ strcat(json_content,"{");   
+ root_value = json_parse_file(filename);
+ values = json_value_get_array(root_value);
+ json_file_total_lines = json_array_get_count(values);
+ if (json_value_get_type(root_value) != JSONArray) {
+    exit(1);
+ }
+ int count_i;
+ int count_j;
+ for(count_i=json_file_current_lines;count_i<json_file_total_lines;count_i++){
+     for(count_j=0;count_j<FIELD_SIZE;count_j++){
+         if(field[count_i][count_j]==field[count_i][count_j+1]){
+             break;
+         }
+         for(j=0;j<count_j;j++){
+             strcat(json_content,&field[count_i][j]);
+             json_file_current_lines=count_i;
+         }
+         //field[count_i][count_j]就是一个json Key所以这里可以直接加到json_content中  
+         value = json_array_get_object(values, count_i);
+         //do the url_encode here to encode commit
+         strcat(json_content," : ");           
+         strcat(json_content, json_object_get_string(value, &field[count_i][count_j]));           
+         strcat(json_content,",\r\n");
+     }
+ }
+ 
+ tmp=json_content;
+ /* cleanup code */
+ json_value_free(root_value);
+
+ strcat(json_content,"}");
+ return json_content;  
 }
 
 /* vraci system rc error kod */

@@ -3,7 +3,7 @@ CC?=		gcc
 LIBS?=
 LDFLAGS?=
 PREFIX?=	/usr/local
-VERSION=1.5
+VERSION=1.5.1
 TMPDIR=/tmp/webbench-$(VERSION)
 
 all:   webbench tags
@@ -18,8 +18,8 @@ install: webbench
 	install -m 644 debian/copyright $(DESTDIR)$(PREFIX)/share/doc/webbench
 	install -m 644 debian/changelog $(DESTDIR)$(PREFIX)/share/doc/webbench
 
-webbench: webbench.o Makefile
-	$(CC) $(CFLAGS) $(LDFLAGS) -o webbench webbench.o $(LIBS) 
+webbench: webbench.o parson.o url.o Makefile
+	$(CC) $(CFLAGS) $(LDFLAGS) -o webbench webbench.o parson.o url.o $(LIBS) 
 
 clean:
 	-rm -f *.o webbench *~ core *.core tags
@@ -36,5 +36,9 @@ tar:   clean
 	-cd $(TMPDIR) && cd .. && tar cozf webbench-$(VERSION).tar.gz webbench-$(VERSION)
 
 webbench.o:	webbench.c socket.c Makefile
+
+parson.o: parson.c parson.h Makefile
+
+url.o: url.c url.h Makefile 
 
 .PHONY: clean install all tar
