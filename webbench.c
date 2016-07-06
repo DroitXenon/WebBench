@@ -61,6 +61,7 @@ char request[REQUEST_SIZE];
 char *requestBody=NULL;
 int json_file_total_lines=1;
 int json_file_current_lines=0;
+unsigned long F_param_number=0;
 
 #define ANSI_COLOR_RED     "\x1b[31m"
 #define ANSI_COLOR_GREEN   "\x1b[32m"
@@ -97,7 +98,7 @@ static const struct option long_options[]=
 /* prototypes */
 static void benchcore(const char* host,const int port, const char *request);
 static int bench(void);
-static void build_request(const char *url, const char *request_body_param, int UA);
+static void build_request(const char *url, const char *requestBody, int UA);
 static char * read_json_file(const char *filename, char field[FIELD_SIZE][FIELD_SIZE]);
 
 static void alarm_handler(int signal)
@@ -143,11 +144,9 @@ int main(int argc, char *argv[])
  int opt=0;
  int options_index=0;
  char *tmp=NULL;
- int UA=0;//移动requestBody到全局变量，因为考虑到会循环更改。但是UA filename field只会读取／赋值一次，因此仍然放在main函数
+ int UA=100;//移动requestBody到全局变量，因为考虑到会循环更改。但是UA filename field只会读取／赋值一次，因此仍然放在main函数
  char *filename=NULL;
- char *sep = ",";
  char field[FIELD_SIZE][FIELD_SIZE]={{0}};
- char *optarg_param=NULL;
  int tmpbool=0;
  unsigned long j=0;
  unsigned long x=0;
@@ -217,18 +216,22 @@ int main(int argc, char *argv[])
             ++x;
         } while(optarg && *optarg); 
         //Slice optarg using "," and store into field[][];
-        for(j=0;j<x;j++){
+        F_param_number=x;
+        for(j=0;j<F_param_number;j++){
             for(k=0;k<strlen(field[j]);k++){
                 field[j][k]=field[j][k+1];
             }
         }
+        //remove all "," in field
         // for(j=0;j<x;j++){
         //     for(k=0;k<strlen(field[j]);k++){
         //         printf("%c",field[j][k]);
         //     }
         //     printf("\n");
         // }
-        //remove all "," in field
+        // for(j=0;j<x;j++){
+        //         printf("this is j %s\n",field[j]);
+        // }
         //在这里应该把所有的参数都切分开来，并且删除掉逗号，存到field二维数组中
         //“n”,"a","m","e",NULL......
         //"a","g","e",NULL.....
@@ -245,11 +248,12 @@ int main(int argc, char *argv[])
  }
  //continue with line184 and line 187 we call the function read_json_file to add to requestBody
  if(filename!=NULL && tmpbool==1) {
-     tmp=read_json_file(filename,field);
-     strcat(request,tmp); 
- }else if(tmpbool==0){
+     tmp=read_json_file(filename,field);//this line causong segment fault 11
+     strcat(requestBody,tmp); 
+ }
+ else if(filename!=NULL && tmpbool==0){
      printf(ANSI_COLOR_RED "\r\nField is not specified, WILL NOT READ JSON FILE\r\n\r\nPLEASE USING -F TO SPECIFY FIELD\r\n\r\n" ANSI_COLOR_RESET ANSI_COLOR_RESET);
- }else if(filename==NULL){
+ }else if(filename==NULL&& tmpbool==1){
      printf(ANSI_COLOR_RED "\r\nFile name is not specified, WILL NOT READ JSON FILE\r\n\r\nPLEASE USING -d TO OPEN JSON FILE\r\n\r\n" ANSI_COLOR_RESET ANSI_COLOR_RESET);
  }
 
@@ -308,7 +312,7 @@ int main(int argc, char *argv[])
  return bench();
 }
 
-void build_request(const char *url, const char *request_body_param, int UA)
+void build_request(const char *url, const char *requestBody, int UA)
 {
   char tmp[10];
   int i;
@@ -445,10 +449,10 @@ void build_request(const char *url, const char *request_body_param, int UA)
 	  strcat(request,host);
 	  strcat(request,"\r\n");
   }
-  if(request_body_param != NULL) 
+  if(requestBody != NULL) 
   {
       strcat(request,"Content-Type:text/json\r\n");
-      strcat(request, request_body_param);//\r\n username=xxx&password=yyy
+      strcat(request, requestBody);//\r\n username=xxx&password=yyy
       strcat(request, "\r\n");
   }
   if(force_reload && proxyhost!=NULL)
@@ -459,7 +463,7 @@ void build_request(const char *url, const char *request_body_param, int UA)
 	  strcat(request,"Connection: close\r\n");
   /* add empty line at end */
   if(http10>0) strcat(request,"\r\n"); 
-  // printf("Req=%s\n",request);
+   printf("Req=%s\r\n",request);
 }
 
 /* this function read json file using parson*/
@@ -470,13 +474,13 @@ static char *  read_json_file(const char *filename, char field[FIELD_SIZE][FIELD
  *ps:如果测试中只发送英文的字段其实可以不用转义
  *
  */
+ printf("read_json_file function start");
  char *tmp=NULL;
  char *json_content=NULL;
  JSON_Value *root_value;
  JSON_Array *values;
  JSON_Object *value;
  size_t i;
- int j;
 
  
  strcat(json_content,"{");   
@@ -489,19 +493,21 @@ static char *  read_json_file(const char *filename, char field[FIELD_SIZE][FIELD
  int count_i;
  int count_j;
  for(count_i=json_file_current_lines;count_i<json_file_total_lines;count_i++){
-     for(count_j=0;count_j<FIELD_SIZE;count_j++){
-         if(field[count_i][count_j]==field[count_i][count_j+1]){
+     for(count_j=0;count_j<F_param_number;count_j++){
+         if(field[count_i][count_j]=='\0'){
              break;
          }
-         for(j=0;j<count_j;j++){
-             strcat(json_content,&field[count_i][j]);
-             json_file_current_lines=count_i;
-         }
-         //field[count_i][count_j]就是一个json Key所以这里可以直接加到json_content中  
+         //for(j=0;j<count_j;j++){
+         //    strcat(json_content,&field[count_i][j]);
+         //    json_file_current_lines=count_i;
+         //}
+         //field[count_i][]就是一个json Key所以这里可以直接加到json_content中  
+         printf("start read json!\n");
          value = json_array_get_object(values, count_i);
+         printf("finish get json object\n");
          //do the url_encode here to encode commit
          strcat(json_content," : ");           
-         strcat(json_content, json_object_get_string(value, &field[count_i][count_j]));           
+         strcat(json_content, json_object_get_string(value, field[count_i]));           
          strcat(json_content,",\r\n");
      }
  }
